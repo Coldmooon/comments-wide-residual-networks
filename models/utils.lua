@@ -8,6 +8,31 @@ function utils.MSRinit(model)
    end
 end
 
+function utils.BilinearFiller(model)
+   for k,v in pairs(model:findModules('nn.SpatialFullConvolution')) do
+      local f = math.ceil (v.kW / 2)
+      local c = (2 * f - 1 - math.fmod(f,2)) / ( 2 * f)
+      local count = v.weight:size()[1]*v.weight:size()[2]*v.weight:size()[3]*v.weight:size()[4]
+      v.weight:permute(2,1,3,4)
+      for dim = 1,count do
+         local x = math.fmod(dim, v.kW)
+         local y = math.fmod((dim / v.kW), v.kH)
+         -- print('dim: ', dim)
+         -- print('value: ', (1 - math.abs( x / f - c)) * (1 - math.abs(y / f - c)))
+         v.weight:storage()[dim] = (1 - math.abs( x / f - c)) * (1 - math.abs(y / f - c))
+         -- local index = {}
+         -- index[1] = math.floor( (dim -1) / (v.kW*v.kH*v.nInputPlane)) + 1
+         -- index[2] = math.floor( math.fmod( dim - 1, (v.kW*v.kH*v.nInputPlane)) / (v.kW*v.kH) ) + 1
+         -- index[4] = math.fmod( dim - 1, v.kH) + 1
+         -- index[3] = math.fmod( dim - 1, v.kW) + 1
+         -- v.weight[index[1]][index[2]][index[3]][index[4]] = value
+         -- v.weight:storage()[dim] = value
+      end
+      v.weight:permute(2,1,3,4)
+      if v.bias then v.bias:zero() end
+end
+end
+
 function utils.FCinit(model)
    for k,v in pairs(model:findModules'nn.Linear') do
      v.bias:zero()
