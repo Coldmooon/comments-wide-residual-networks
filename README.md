@@ -1,3 +1,8 @@
+Change Log
+=============
+1. Added a new filler for Convolutional layers: utils.BilinearFiller which is used to upsample feature maps. This filler is a replication of [BilinearFiller](https://github.com/BVLC/caffe/blob/master/include/caffe/filler.hpp#L243) in `Caffe`
+
+
 Code for Wide Residual Networks
 =============
 
