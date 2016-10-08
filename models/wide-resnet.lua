@@ -109,7 +109,7 @@ local function createModel(opt)
    utils.FCinit(model)
    
    -- model:get(1).gradInput = nil
-
+   print('Parameters', model:getParameters():size()[1])
    return model
 end
 
