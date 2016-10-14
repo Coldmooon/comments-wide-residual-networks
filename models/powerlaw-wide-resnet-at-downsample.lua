@@ -53,7 +53,7 @@ local function createModel(opt)
          if i == 1 then -- when i = 1, v = {3,3,stride,stride,1,1}
          	-- check if nInputPlane is equal to nOutputPlane
             local module = nInputPlane == nOutputPlane and convs or block
-            -- module:add(SBatchNorm(nInputPlane)):add(ReLU(true)) -- first add BN, then ReLU
+            module:add(SBatchNorm(nInputPlane)):add(ReLU(true)) -- first add BN, then ReLU
             convs:add(Convolution(nInputPlane,nBottleneckPlane,table.unpack(v)))
          else -- when i = 2, v = {3,3,1,1,1,1}
             convs:add(SBatchNorm(nBottleneckPlane)):add(ReLU(true))
@@ -111,42 +111,46 @@ local function createModel(opt)
 
    ------------------------------------------------------
 
-   local powerlaw32to16 = nn.Concat(2)
-   -- powerlaw32to16:add(nn.Identity())
-   powerlaw32to16:add(nn.Sequential():add(Convolution(160, 40, 1, 1, 1, 1, 0, 0)):add(SBatchNorm(40)):add(ReLU(true)))
+   local powerlaw32to16 = nn.ConcatTable()
+   powerlaw32to16:add(nn.Identity())
+   -- powerlaw32to16:add(nn.Sequential():add(Convolution(160, 40, 1, 1, 1, 1, 0, 0)):add(SBatchNorm(40)):add(ReLU(true)))
+   -- powerlaw32to16:add(Convolution(16, 16, 3, 3, 1, 1, 1, 1))
 
    deconv64 = nn.Sequential()
    deconv64:add(nn.SpatialUpSamplingNearest(2))
-   -- deconv64:add(nn.SpatialFullConvolution(160, 160, 4, 4, 2, 2, 1, 1):noBias():learningRate('weight', 0):weightDecay('weight', 0))
-   -- scale64 = nn.CMul(160, 1, 1)
-   -- scale64.weight = torch.Tensor(160, 1, 1):fill(1.0391)
-   scale64 = nn.Mul()
-   -- scale64.weight = 1.0391
+   -- scale64 = nn.Mul()
+   scale64 = nn.CMul(1, 16, 1, 1)
    deconv64:add(scale64)
-   deconv64:add(Convolution(160, 40, 4, 4, 2, 2, 1, 1))
-   deconv64:add(SBatchNorm(40)):add(ReLU(true))
+   deconv64:add(SBatchNorm(16)):add(ReLU(true))
+   -- deconv64:add(nn.SpatialFullConvolution(160, 160, 4, 4, 2, 2, 1, 1):noBias():learningRate('weight', 0):weightDecay('weight', 0))
+   -- scale64.weight = torch.Tensor(160, 1, 1):fill(1.0391)
+   -- scale64.weight = 1.0391
+   deconv64:add(Convolution(16, 16, 4, 4, 2, 2, 1, 1))
+   deconv64:add(SBatchNorm(16)):add(ReLU(true)):add(Convolution(16, 16, 3, 3, 1, 1, 1, 1))
 
    deconv96 = nn.Sequential()
    deconv96:add(nn.SpatialUpSamplingNearest(3))
    --deconv96:add(nn.SpatialFullConvolution(160, 160, 5, 5, 3, 3, 1, 1):noBias():learningRate('weight', 0):weightDecay('weight', 0))
-   -- scale96 = nn.CMul(160, 1, 1)
+   -- scale96 = nn.Mul()
+   scale96 = nn.CMul(1, 16, 1, 1)
    -- scale96.weight = torch.Tensor(160, 1, 1):fill(1.0874)
-   scale96 = nn.Mul()
    -- scale96.weight = 1.0874
    deconv96:add(scale96)
-   deconv96:add(Convolution(160, 40, 5, 5, 3, 3, 1, 1))
-   deconv96:add(SBatchNorm(40)):add(ReLU(true))
+   deconv96:add(SBatchNorm(16)):add(ReLU(true))
+   deconv96:add(Convolution(16, 16, 5, 5, 3, 3, 1, 1))
+   deconv96:add(SBatchNorm(16)):add(ReLU(true)):add(Convolution(16, 16, 3, 3, 1, 1, 1, 1))
 
    deconv128 = nn.Sequential()
    deconv128:add(nn.SpatialUpSamplingNearest(4))
    -- deconv128:add(nn.SpatialFullConvolution(160, 160, 8, 8, 4, 4, 2, 2):noBias():learningRate('weight', 0):weightDecay('weight', 0))
-   -- scale128 = nn.CMul(160, 1, 1)
+   -- scale128 = nn.Mul()
+   scale128 = nn.CMul(1, 16, 1, 1)
    -- scale128.weight = torch.Tensor(160, 1, 1):fill(1.1495)
-   scale128 = nn.Mul()
    -- scale128.weight = 1.1495
    deconv128:add(scale128)
-   deconv128:add(Convolution(160, 40, 8, 8, 4, 4, 2, 2))
-   deconv128:add(SBatchNorm(40)):add(ReLU(true))
+   deconv128:add(SBatchNorm(16)):add(ReLU(true))
+   deconv128:add(Convolution(16, 16, 8, 8, 4, 4, 2, 2))
+   deconv128:add(SBatchNorm(16)):add(ReLU(true)):add(Convolution(16, 16, 3, 3, 1, 1, 1, 1))
 
    powerlaw32to16:add(deconv64):add(deconv96):add(deconv128)
    ---------------------------------------------------------
@@ -188,11 +192,9 @@ local function createModel(opt)
       local nStages = torch.Tensor{16, 16*k, 32*k, 64*k}
 
       model:add(Convolution(3,nStages[1],3,3,1,1,1,1)) -- one conv at the beginning (spatial size: 32x32)
-      model:add(SBatchNorm(nStages[1]))
-      model:add(ReLU(true))
+      model:add(SBatchNorm(16)):add(ReLU(true)):add(powerlaw32to16):add(nn.CAddTable())
+
       model:add(layer(wide_basic, nStages[1], nStages[2], n, 1)) -- Stage 1 (spatial size: 32x32)
-      -- model:get(4):get(4):get(1):get(1):get(4).nOutputPlane = 40
-      model:add(powerlaw32to16)--:add(nn.CAddTable())
       
       model:add(layer(wide_basic, nStages[2], nStages[3], n, 2)) -- Stage 2 (spatial size: 16x16)
       -- model:add(powerlaw16to8):add(nn.CAddTable())
