@@ -19,6 +19,7 @@
 local nn = require 'nn'
 local utils = paths.dofile'utils.lua'
 
+-- Just for convenience.
 local Convolution = nn.SpatialConvolution
 local Avg = nn.SpatialAveragePooling
 local ReLU = nn.ReLU
@@ -38,34 +39,58 @@ local function createModel(opt)
 
    local blocks = {}
    
+   -- This function is used to creat a residual modual.
    local function wide_basic(nInputPlane, nOutputPlane, stride)
+      -- In each residual modual, There are two convolutional layers;
+      -- For the first one, the stride of conv should be determined by the
+      -- type of moudal. If the modual is used to downsample, stride = 2;
+      -- stride = 1, otherwise. For the second one, it is corresponding to
+      -- the second convoutional layer whose parameters are never changed.
       local conv_params = {
          {3,3,stride,stride,1,1},
          {3,3,1,1,1,1},
       }
       local nBottleneckPlane = nOutputPlane
 
-      local block = nn.Sequential()
-      local convs = nn.Sequential()     
+      local block = nn.Sequential() -- block is the modual container.
+      local convs = nn.Sequential() -- convs is the residual branch container.    
 
+      -- Pipeline:
+      -- make sure the type of the module;
+      -- put `BatchNorm` and `ReLU` somewhere according to the type;
+      -- add the first conv and set `stride` according to the type;
+      -- add `BatchNorm` and `ReLU` again;
+      -- add the second conv.
       for i,v in ipairs(conv_params) do
-         if i == 1 then
+         if i == 1 then  -- in which case, v == {3,3,stride,stride,1,1}
+            -- This line is used to confirm the type of the module, a regular one or
+            -- a downsample one.
             local module = nInputPlane == nOutputPlane and convs or block
+            -- For the first convolutional layer in the modual, if nInputPlane == nOutputPlane
+            -- , the type of modual is just a regular one. In this case,
+            -- module == convs. Therefore, put `BatchNorm` and `ReLU` in the residual branch.
+            -- If nInputPlane != nOutputPlane, the type is a downsample modual. In this case,
+            -- module == block and put `BatchNorm` and `ReLU` out of the module. All in all, 
+            -- the next line is only used to decide where to put `BatchNorm` and `ReLU`.
             module:add(SBatchNorm(nInputPlane)):add(ReLU(true))
+            -- The first convolutional layer, its `stride` depends on the type of the module.
             convs:add(Convolution(nInputPlane,nBottleneckPlane,table.unpack(v)))
-         else
+         else -- in which case, v == {3,3,1,1,1,1}
+            -- First add `BatchNorm` and `ReLU`.
             convs:add(SBatchNorm(nBottleneckPlane)):add(ReLU(true))
             if opt.dropout > 0 then
                convs:add(Dropout())
             end
+            -- Then add the second convolutional layer into the module.
             convs:add(Convolution(nBottleneckPlane,nBottleneckPlane,table.unpack(v)))
          end
       end
-     
+      -- Add shorcut branch for the module.
       local shortcut = nInputPlane == nOutputPlane and
          nn.Identity() or
          Convolution(nInputPlane,nOutputPlane,1,1,stride,stride,0,0)
      
+      -- Aggregate the two branches by the operation of `ADD`.
       return block
          :add(nn.ConcatTable()
             :add(convs)
