@@ -15,7 +15,7 @@ local iterm = require 'iterm'
 require 'iterm.dot'
 
 local opt = {
-  dataset = './datasets/cifar10_whitened.t7',
+  dataset = '/home/liyang/Datasets/cifar10_whitened.t7',
   save = 'logs',
   batchSize = 128,
   learningRate = 0.1,
@@ -39,7 +39,7 @@ local opt = {
   randomcrop_type = 'zero',
   cudnn_deterministic = false,
   optnet_optimize = true,
-  generate_graph = false,
+  generate_graph = true,
   multiply_input_factor = 1,
   widen_factor = 1,
   nGPU = 1,
@@ -76,6 +76,7 @@ if opt.data_type:match'torch.Cuda.*Tensor' then
       iterm.dot(graphgen(net, sample_input), opt.save..'/graph.pdf')
    end
    if opt.optnet_optimize then
+      print('yes, using optnet')
       optnet.optimizeMemory(net, sample_input, {inplace = false, mode = 'training'})
    end
 
